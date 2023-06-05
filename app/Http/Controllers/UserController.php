@@ -6,13 +6,16 @@ use Faker\Factory as Faker;
 use Illuminate\Support\Str;
 use App\Models\User;
 use App\Jobs\ProcessUsers;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Bus\Batch;
+use Throwable;
+
+ini_set('memory_limit', '1280M');
 
 class UserController extends Controller
 {
     public function index()
     {
-        ini_set('memory_limit', '1280M');
-
         $faker = Faker::create();
         $data = [];
 
@@ -28,18 +31,41 @@ class UserController extends Controller
 
         $chunks = array_chunk($data, 1000);
 
-        // note
-        // untill here the code will take alot of time to execute for only creating the data above, but in your case should the data be ready
-        // note
+        /*
+        
+        untill here the code will take alot of time to execute for only creating the data above, but in your case should the data be ready
+        
+        */
 
+        // now we will dispatch the jobs to be executed in the background
+        // $this->runAllChunksInOneBatch($chunks);
+
+        // now we will dispatch specific number of jobs to be executed in the background
+        $this->runSpecificNumberOfChunks($chunks, 3);
+
+        $users = \App\Models\User::paginate(10);
+
+        return response(['success' => true, 'data' => $users]);
+    }
+
+    // run all chunks in one batch
+    public function runAllChunksInOneBatch($chunks)
+    {
+        // now we will dispatch the jobs to be executed in the background
         foreach ($chunks as $chunk) {
             // create a batch of jobs
             ProcessUsers::dispatch($chunk);
         }
+    }
 
-        $users = \App\Models\User::paginate(10);
-
-
-        return response(['success' => true, 'data' => $users]);
+    // run specific number of chunks in one batch
+    public function runSpecificNumberOfChunks($chunks, $numberOfChunks)
+    {
+        // now we will dispatch the jobs to be executed in the background
+        Bus::batch(
+            array_map(function ($chunk) {
+                return new ProcessUsers($chunk);
+            }, array_slice($chunks, 0, $numberOfChunks))
+        )->dispatch();
     }
 }
